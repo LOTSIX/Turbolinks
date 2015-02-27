@@ -1,5 +1,6 @@
 Turbolinks
 ===========
+[![Build Status](https://travis-ci.org/rails/turbolinks.svg?branch=master)](https://travis-ci.org/rails/turbolinks)
 
 Turbolinks makes following links in your web application faster. Instead of letting the browser recompile the JavaScript and CSS between each page change, it keeps the current page instance alive and replaces only the body and the title in the head. Think CGI vs persistent process.
 
@@ -21,7 +22,7 @@ The best way to find out just how fast it is? Try it on your own application. It
 No jQuery or any other library
 --------------------------------
 
-Turbolinks is designed to be as light-weight as possible (so you won't think twice about using it even for mobile stuff). It does not require jQuery or any other library to work. But it works great _with_ the jQuery or Prototype framework, or whatever else have you.
+Turbolinks is designed to be as light-weight as possible (so you won't think twice about using it even for mobile stuff). It does not require jQuery or any other library to work. But it works great _with_ the jQuery or Prototype framework, or whatever else you have.
 
 
 Events
@@ -33,8 +34,9 @@ With Turbolinks pages will change without a full reload, so you can't rely on `D
 * `page:before-change` a Turbolinks-enabled link has been clicked *(see below for more details)*
 * `page:fetch` starting to fetch a new target page
 * `page:receive` the page has been fetched from the server, but not yet parsed
-* `page:change` the page has been parsed and changed to the new version and on DOMContentLoaded
-* `page:update` is triggered whenever page:change is PLUS on jQuery's ajaxSucess, if jQuery is available (otherwise you can manually trigger it when calling XMLHttpRequest in your own code)
+* `page:before-unload` the page has been parsed and is about to be changed
+* `page:change` the page has been changed to the new version (and on DOMContentLoaded)
+* `page:update` is triggered alongside both page:change and jQuery's ajaxSuccess (if jQuery is available - otherwise you can manually trigger it when calling XMLHttpRequest in your own code)
 * `page:load` is fired at the end of the loading process.
 
 Handlers bound to the `page:before-change` event may return `false`, which will cancel the Turbolinks process.
@@ -42,6 +44,7 @@ Handlers bound to the `page:before-change` event may return `false`, which will 
 By default, Turbolinks caches 10 of these page loads. It listens to the [popstate](https://developer.mozilla.org/en-US/docs/DOM/Manipulating_the_browser_history#The_popstate_event) event and attempts to restore page state from the cache when it's triggered. When `popstate` is fired the following process happens:
 
 ***Restore* a cached page from the client-side cache:**
+* `page:before-unload` page has been fetched from the cache and is about to be changed
 * `page:change` page has changed to the cached page.
 * `page:restore` is fired at the end of restore process.
 
@@ -55,14 +58,29 @@ Turbolinks.pagesCached();
 Turbolinks.pagesCached(20);
 ```
 
-When a page is removed from the cache due to the cache reaching its size limit, the `page:expire` event is triggered.  Listeners bound to this event can access the cached page object using `event.originalEvent.data`.  Keys of note for this page cache object include `url`, `body`, and `title`.  
+If you need to make dynamic HTML updates in the current page and want it to be cached properly you can call:
+```javascript
+Turbolinks.cacheCurrentPage();
+```
+
+When a page is removed from the cache due to the cache reaching its size limit, the `page:expire` event is triggered.  Listeners bound to this event can access the cached page object using `event.originalEvent.data`.  Keys of note for this page cache object include `url`, `body`, and `title`.
 
 To implement a client-side spinner, you could listen for `page:fetch` to start it and `page:receive` to stop it.
 
-    document.addEventListener("page:fetch", startSpinner);
-    document.addEventListener("page:receive", stopSpinner);
+```javascript
+// using jQuery for simplicity
 
-DOM transformations that are idempotent are best. If you have transformations that are not, hook them to happen only on `page:load` instead of `page:change` (as that would run them again on the cached pages).
+$(document).on("page:fetch", startSpinner);
+$(document).on("page:receive", stopSpinner);
+```
+
+DOM transformations that are idempotent are best. If you have transformations that are not, bind them to `page:load` (in addition to the initial page load) instead of `page:change` (as that would run them again on the cached pages):
+
+```javascript
+// using jQuery for simplicity
+
+$(document).on("ready page:load", nonIdempotentFunction);
+```
 
 Transition Cache: A Speed Boost
 -------------------------------
@@ -76,9 +94,31 @@ To enable Transition Cache, include the following in your javascript:
 Turbolinks.enableTransitionCache();
 ```
 
-The one drawback is that dramatic differences in appearence between a cached copy and new copy may lead to a jarring affect for the end-user. This will be especially true for pages that have many moving parts (expandable sections, sortable tables, infinite scrolling, etc.).
+The one drawback is that dramatic differences in appearance between a cached copy and new copy may lead to a jarring affect for the end-user. This will be especially true for pages that have many moving parts (expandable sections, sortable tables, infinite scrolling, etc.).
 
 If you find that a page is causing problems, you can have Turbolinks skip displaying the cached copy by adding `data-no-transition-cache` to any DOM element on the offending page.
+
+Progress Bar
+------------
+
+Because Turbolinks skips the traditional full page reload, browsers won't display their native progress bar when changing pages. To fill this void, Turbolinks offers an optional JavaScript-and-CSS-based progress bar to display page loading progress.
+
+To enable the progress bar, include the following in your JavaScript:
+```javascript
+Turbolinks.enableProgressBar();
+```
+
+The progress bar is implemented on the `<html>` element's pseudo `:before` element and can be **customized** by including CSS with higher specificity than the included styles. For example:
+
+```css
+html.turbolinks-progress-bar::before {
+  background-color: red !important;
+  height: 5px !important;
+}
+```
+
+In Turbolinks 3.0, the progress bar will be turned on by default.
+
 
 Initialization
 --------------
@@ -121,7 +161,7 @@ Also, Turbolinks is installed as the last click handler for links. So if you ins
 jquery.turbolinks
 -----------------
 
-If you have a lot of existing JavaScript that binds elements on jQuery.ready(), you can pull the [jquery.turbolinks](https://github.com/kossnocorp/jquery.turbolinks) library into your project that will trigger ready() when Turbolinks triggers the the `page:load` event. It may restore functionality of some libraries.
+If you have a lot of existing JavaScript that binds elements on jQuery.ready(), you can pull the [jquery.turbolinks](https://github.com/kossnocorp/jquery.turbolinks) library into your project that will trigger ready() when Turbolinks triggers the `page:load` event. It may restore functionality of some libraries.
 
 Add the gem to your project, then add the following line to your JavaScript manifest file, after `jquery.js` but before `turbolinks.js`:
 
@@ -195,9 +235,11 @@ Language Ports
 *These projects are not affiliated with or endorsed by the Rails Turbolinks team.*
 
 * [Flask Turbolinks](https://github.com/lepture/flask-turbolinks) (Python Flask)
+* [Django Turbolinks](https://github.com/dgladkov/django-turbolinks) (Python Django)
 * [ASP.NET MVC Turbolinks](https://github.com/kazimanzurrashid/aspnetmvcturbolinks)
 * [PHP Turbolinks Component](https://github.com/helthe/Turbolinks) (Symfony Component)
 * [PHP Turbolinks Package](https://github.com/frenzyapp/turbolinks) (Laravel Package)
+* [Grails Turbolinks](http://grails.org/plugin/turbolinks) (Grails Plugin)
 
 Credits
 -------
